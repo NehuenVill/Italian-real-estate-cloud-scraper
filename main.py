@@ -19,7 +19,7 @@ def get_values_for_comparing_already_existing_props(table_name:str):
     client = bigquery.Client()
 
     query = f"""
-        SELECT (Titolo, Area, Prezzo, Locali, MQ, Bagni, Piano, Dettagli) FROM Trieste_properties.{table_name} WHERE Date_delisted = NULL;
+        SELECT (Titolo, Area, Prezzo, Locali, MQ, Bagni, Piano, Dettagli, Url_immobiliare, Url_subito, Url_idealista, Url_casa) FROM Trieste_properties.{table_name} WHERE Date_delisted = NULL;
     """
 
     query_job = client.query(query)
@@ -31,7 +31,7 @@ def get_all_url_values(table_name:str, from_website:str):
     client = bigquery.Client()
 
     query = f"""
-        SELECT (Url{from_website}) FROM Trieste_properties.{table_name} WHERE Date_delisted = NULL;
+        SELECT (Url_{from_website}) FROM Trieste_properties.{table_name} WHERE Date_delisted = NULL;
     """
 
     query_job = client.query(query)
@@ -53,7 +53,7 @@ def get_delisted_properties(db_values_url, scraped_urls:list, from_web_site:str)
 
     new_properties = list(set(scraped_urls) - set(db_urls))
 
-    return delisted_properties
+    return delisted_properties, new_properties
 
 def update_delisted_properties(table_name:str, from_website:str, url:str):
 
@@ -68,7 +68,7 @@ def update_delisted_properties(table_name:str, from_website:str, url:str):
 
     print(f"Property: {url} has been updated to delisted.")
 
-def is_on_db_from_same_site(db_values_url, url:str, from_web_site:str):
+def is_on_db_from_same_site(db_values_url, url:str):
 
     is_already = False
 
@@ -91,8 +91,6 @@ def is_on_db_from_same_site(db_values_url, url:str, from_web_site:str):
 def is_on_db_from_another_site(db_values,title:str, area:str, price:int, rooms:int, details:str, mq:int, bathrooms:int, floors:int) -> bool:
 
     is_already = False
-
-      # Make an API request.
 
     for row in db_values:
 
