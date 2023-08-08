@@ -1,3 +1,4 @@
+from sqlite3 import SQLITE_CREATE_TEMP_TRIGGER
 import time
 import requests
 from bs4 import BeautifulSoup
@@ -16,9 +17,9 @@ url_by_table = [
     ]
 
 properties_values_from_other_sites = [
-    main.get_values_for_comparing_already_existing_props("auction_properties"),
-    main.get_values_for_comparing_already_existing_props("buildings"),
-    main.get_values_for_comparing_already_existing_props("main_properties")
+    main.get_values_for_comparing_already_existing_props("auction_properties", "immobiliare"),
+    main.get_values_for_comparing_already_existing_props("buildings", "immobiliare"),
+    main.get_values_for_comparing_already_existing_props("main_properties", "immobiliare")
 ]
 
 GS_columns = ['Date_GMT', 'Titolo', 'Area', 'Link', 'Prezzo', 'Locali', 'MQ', 'Bagni','Piano', 'Descrizione', 'Dettagli', 'Agenzia']
@@ -187,6 +188,10 @@ def get_all_properties():
             house_url = house.find('a')['href']
             all_urls.append(house_url)
 
+    # compare_to_same_site(all_urls, url_by_table)
+
+    # update_delisted(url_by_table, all_urls)
+
     return all_urls
 
 def compare_to_same_site(all_urls, url_by_table):
@@ -218,9 +223,33 @@ def compare_to_same_site(all_urls, url_by_table):
         
 def compare_to_other_site(partialy_scraped_properties):
 
+    is_on_db_other = False
+
+    on_db_other = []
+
     for values in properties_values_from_other_sites:
 
-        is_on_db_other = main.is_on_db_from_another_site()
+        is_on_db_other = main.is_on_db_from_another_site(values, partialy_scraped_properties[""])
+
+        if is_on_db_other:
+
+            break
+
+        else:
+
+            pass
+
+    if not is_on_db_other:
+
+        on_db_other.append(partialy_scraped_properties["Url_immobiliare"])
+
+    return on_db_other
+
+def update_other_sites(scraped_values_df):
+
+    for property in scraped_values_df:
+
+        main.update_properties_from_other_sites("put here all the variables")
 
 def update_delisted(urls_by_table, all_urls) -> list:
 
@@ -238,62 +267,51 @@ def update_delisted(urls_by_table, all_urls) -> list:
 
     return all_new_props
 
+def insert(scraped_values, table):
+
+    for property in scraped_values:
+
+        main.insert_to_gs(property, table)
+
+        main.insert_to_bq(scraped_values, DB_columns, table, "immobiliare")
+
 def scrape_data(new_listed_props):
 
     with ThreadPoolExecutor() as executor:
-        futures = [executor.submit(get_individual, url) for url in new_listed_props]
+
+        futures = []
+
+        for url in new_listed_props:
+
+            futures.append(executor.submit(get_individual, url))
+
+            #sth
 
     details_list = [future.result() for future in futures]
     df = pd.DataFrame(details_list)
 
     return df
 
+def clean_and_split_data(dataframe):
+
+    GS_df = dataframe[GS_columns]
+
+    DB_df = dataframe[DB_columns]
+    auction_df = dataframe[dataframe['Prezzo'].str.contains('da', na=False)]
+    auctionGS_df = auction_df[GS_columns]
+    auctionDB_df = auction_df[DB_columns]
 
 
-dataframe = scrape_data()
+    building_df = dataframe[dataframe['Prezzo'].str.contains(r'\d+\s*-\s*\d+', na=False)]
+    buildingGS_df = building_df[GS_columns]
+    buildingDB_df = building_df[DB_columns]
 
 
-GS_df = dataframe[GS_columns]
+    main_df = dataframe[~dataframe['Prezzo'].str.contains(r'\d+\s*-\s*\d+|da', na=False)]
+    main_df['Prezzo'] = pd.to_numeric(main_df['Prezzo'].replace(".", ""),errors = 'coerce')
+    main_df['MQ'] = pd.to_numeric(main_df['MQ'],errors = 'coerce')
+    main_df['Prezzo_al_mq'] = main_df['Prezzo']/main_df['MQ']
+    main_df.insert(5, 'Prezzo_al_mq', main_df.pop('Prezzo_al_mq'))
 
-DB_df = dataframe[DB_columns]
-
-
-auction_df = dataframe[dataframe['Prezzo'].str.contains('da', na=False)]
-
-auctionGS_df = auction_df[GS_columns]
-
-
-DB_columns = ['Date_GMT', 'Titolo', 'Area', 'Link', 'Prezzo','Locali', 'MQ', 'Bagni','Piano', 
-              'Descrizione', 'Dettagli', 'Agenzia','contratto', 'anno di costruzione', 'stato',
-              'riscaldamento','efficienza energetica', 'altre caratteristiche','Blueprint Url']
-
-auctionDB_df = auction_df[DB_columns]
-
-
-building_df = dataframe[dataframe['Prezzo'].str.contains(r'\d+\s*-\s*\d+', na=False)]
-
-buildingGS_df = building_df[GS_columns]
-
-buildingDB_df = building_df[DB_columns]
-
-
-buildingGS_df.head()
-
-
-buildingDB_df.head()
-
-
-main_df = dataframe[~dataframe['Prezzo'].str.contains(r'\d+\s*-\s*\d+|da', na=False)]
-main_df.head()
-
-
-main_df['Prezzo'] = pd.to_numeric(main_df['Prezzo'].replace(".", ""),errors = 'coerce')
-main_df['MQ'] = pd.to_numeric(main_df['MQ'],errors = 'coerce')
-
-main_df['Prezzo_al_mq'] = main_df['Prezzo']/main_df['MQ']
-
-main_df.insert(5, 'Prezzo_al_mq', main_df.pop('Prezzo_al_mq'))
-
-mainGS_df = main_df[GS_columns]
-
-mainDB_df = main_df[DB_columns]
+    mainGS_df = main_df[GS_columns]
+    mainDB_df = main_df[DB_columns]

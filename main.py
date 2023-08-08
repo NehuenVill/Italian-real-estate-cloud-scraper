@@ -11,15 +11,20 @@ from email.mime.text import MIMEText
 import requests
 from datetime import datetime
 
+from Immobiliare import DB_columns
+
 
 environ['GOOGLE_APPLICATION_CREDENTIALS'] = 'C:/Users/nehue/Documents/programas_de_python/Upwork_tasks/italian_real_estate_cloud_scraper/credentials.json'
 
-def get_values_for_comparing_already_existing_props(table_name:str):
+def get_values_for_comparing_already_existing_props(table_name:str, from_website:str):
 
     client = bigquery.Client()
 
     query = f"""
-        SELECT (Titolo, Area, Prezzo, Locali, MQ, Bagni, Piano, Dettagli, Url_immobiliare, Url_subito, Url_idealista, Url_casa) FROM Trieste_properties.{table_name} WHERE Date_delisted = NULL;
+        SELECT (Titolo, Area, Prezzo, Locali, MQ, Bagni, Piano, Dettagli, Url_immobiliare, Url_subito, Url_idealista, Url_casa)
+        FROM Trieste_properties.{table_name}
+        WHERE Date_delisted = NULL AND
+        Url_{from_website} = NULL;
     """
 
     query_job = client.query(query)
@@ -107,7 +112,32 @@ def is_on_db_from_another_site(db_values,title:str, area:str, price:int, rooms:i
 
     return is_already
 
-def insert_to_gs(input:dict):
+def update_properties_from_other_sites(scraped_values:dict, table_name:str, db_title:str, db_columns:list, from_website="immobiliare"):
+
+    client = bigquery.Client()
+
+    set_query = ""
+
+    for col in db_columns:
+
+        try:
+
+            set_query += f"{col} = {scraped_values[col]}"
+
+        except:
+
+            pass
+
+    query = f"""UPDATE Trieste_properties.{table_name}
+        SET {set_query}
+        WHERE Url_{from_website} = {scraped_values["Url"]};
+        """
+
+    query_job = client.query(query)
+
+    print(f'Property: {scraped_values["Url"]} has been updated to delisted.')
+
+def insert_to_gs(input:dict, sheet:str):
 
     headers = ['Date_GMT', 'Titolo', 'Area', 'Link', 'Prezzo', 'Locali', 'MQ', 'Bagni','Piano', 'Descrizione', 'Dettagli', 'Agenzia']
 
@@ -139,37 +169,26 @@ def get_lat_and_long():
 
     return [lat,lon]
 
-def insert_to_bq(input:dict, table_name:str, from_website:str):
+def insert_to_bq(input:dict, db_columns:list, table_name:str, from_website:str):
 
     client = bigquery.Client()
 
-    if is_on_db_from_same_site(get_all_url_values(), input['Link']):
+    query_values = "("
 
-        return "The property already exists in the database and was scraped from the same website again."
+    for value in db_columns:
 
-    if is_on_db_from_another_site(get_values_for_comparing_already_existing_props(), 
-    input['Titolo'], input['Area'], input['Prezzo'], input['Locali'], input['Dettagli'], input['MQ'], input['Bagni'], input['Piano']):
+        query_values += f"{db_columns[value]}, "
 
-        print("The property already exists in the database but from another website")
+    query_values.strip(",")
 
-        # Function to scrape the Lat and long from ide or casa.
-
-        lat_long = get_lat_and_long()
-
-        query = f"UPDATE Trieste_properties.{table_name} SET Latitude = {lat_long[0]}, Longitude = {lat_long[1]}, Url_{} = {}"
-
-
+    query_values += ")"
 
     query = f"""
-        INSERT INTO Trieste_properties.{table_name} VALUES
+        INSERT INTO Trieste_properties.{table_name}
+        VALUES {query_values}
     """
 
-    query_job = client.query(query)  # Make an API request.
-
-    print("The query data:")
-    for row in query_job:
-        # Row values can be accessed by field name or index.
-        print("name={}, count={}".format(row[0], row["total_people"]))
+    query_job = client.query(query)
 
 def alert(price:int, url:str) -> bool:
 
